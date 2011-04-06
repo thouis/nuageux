@@ -1,3 +1,4 @@
+from __future__ import with_statement
 import select
 import sys
 import pybonjour
@@ -6,7 +7,6 @@ import threading
 from twisted.web.resource import Resource
 from twisted.web.server import Site
 from twisted.internet import reactor
-from __future__ import with_statement
 
 class Server(object):
     def __init__(self, name, port=None, use_bonjour=False):
@@ -56,7 +56,7 @@ class Server(object):
                     self.queue.rotate(1)
 
     def start(self):
-        self.helper.start()
+        self.helper.start(self.port)
 
     def stop(self):
         self.helper.stop()
@@ -74,21 +74,26 @@ class WorkWrapper(Resource):
         Resource.__init__(self)
         self.work_server = work_server
 
-    def getChild(self, name, request):
-        if name == '':
-            return self
-        return Resource.getChild(self, name, request)
-
     def render_GET(self, request):
-        return "Hello, world! I am located at %r." % (request.prepath,)
+        return "Hello, world! I am located at %r. %s" % (request.prepath, request)
 
 class Helper(object):
     def __init__(self, work_server):
-        self.site = server.Site(WorkWrapper(work_server))
+        self.site = Site(WorkWrapper(work_server))
 
     def start(self, port):
         reactor.listenTCP(port, self.site)
-        threading.Thread(None, reactor.run, "Twisted reactor thread")
+        threading.Thread(None, reactor.run, "Twisted reactor thread", kwargs={'installSignalHandlers' : 0}).start()
 
     def stop(self):
         reactor.callFromThread(reactor.stop)
+
+if __name__ == '__main__':
+    s = Server('test', 8180)
+    s.start()
+    input()
+    print threading.activeCount(), "threads"
+    s.stop()
+    input()
+    print threading.activeCount(), "threads"
+    
