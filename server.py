@@ -3,15 +3,14 @@ import sys
 import pybonjour
 from collections import deque
 import threading
-
 from twisted.web.resource import Resource
-
-
+from twisted.web.server import Site
+from twisted.internet import reactor
 from __future__ import with_statement
-
 
 class Server(object):
     def __init__(self, name, port=None, use_bonjour=False):
+        self.port = port or 8139
         self.jobnum = 0
         self.queue = deque()
         self.completed = {}
@@ -85,37 +84,11 @@ class WorkWrapper(Resource):
 
 class Helper(object):
     def __init__(self, work_server):
-        self.resource = WorkWrapper(work_server)
-        self.lock = Lock()
+        self.site = server.Site(WorkWrapper(work_server))
 
-    def start(self):
-        
+    def start(self, port):
+        reactor.listenTCP(port, self.site)
+        threading.Thread(None, reactor.run, "Twisted reactor thread")
 
-name    = sys.argv[1]
-regtype = sys.argv[2]
-port    = int(sys.argv[3])
-
-
-def register_callback(sdRef, flags, errorCode, name, regtype, domain):
-    if errorCode == pybonjour.kDNSServiceErr_NoError:
-        print 'Registered service:'
-        print '  name    =', name
-        print '  regtype =', regtype
-        print '  domain  =', domain
-
-
-sdRef = pybonjour.DNSServiceRegister(name = name,
-                                     regtype = regtype,
-                                     port = port,
-                                     callBack = register_callback)
-
-try:
-    try:
-        while True:
-            ready = select.select([sdRef], [], [])
-            if sdRef in ready[0]:
-                pybonjour.DNSServiceProcessResult(sdRef)
-    except KeyboardInterrupt:
-        pass
-finally:
-    sdRef.close()
+    def stop(self):
+        reactor.callFromThread(reactor.stop)
