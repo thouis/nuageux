@@ -5,6 +5,7 @@ import pybonjour
 from collections import deque
 import threading
 from twisted.web.resource import Resource
+from twisted.web.static import Data
 from twisted.web.server import Site
 from twisted.internet import reactor
 
@@ -66,16 +67,32 @@ class Server(object):
             self.queue.clear()
             self.completed = {}
             
-
-class WorkWrapper(Resource):
+class StatusWrapper(Resource):
     isLeaf = True
-
     def __init__(self, work_server):
         Resource.__init__(self)
         self.work_server = work_server
 
     def render_GET(self, request):
-        return "Hello, world! I am located at %r. %s" % (request.prepath, request)
+        print "serving", request
+        return "<html><body><PRE>%s</PRE></body></html>"%(self.work_server.queue)
+
+class WorkWrapper(Resource):
+    def __init__(self, work_server):
+        Resource.__init__(self)
+        self.work_server = work_server
+        self.status = StatusWrapper(work_server)
+
+    def getChild(self, name, request):
+        print "getchild", name, request
+        if name == '':
+            return self.status
+        if name == 'work':
+            return Data(str(self.work_server.next_job()), 'text/plain')
+        return self
+
+    def render_GET(self, request):
+        return "default workwrapper", request
 
 class Helper(object):
     def __init__(self, work_server):
@@ -91,6 +108,8 @@ class Helper(object):
 if __name__ == '__main__':
     s = Server('test', 8180)
     s.start()
+    s.add_work('first job')
+    s.add_work('second job')
     input()
     print threading.activeCount(), "threads"
     s.stop()
