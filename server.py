@@ -1,22 +1,20 @@
 from __future__ import with_statement
 import select
 import sys
-import pybonjour
 from collections import deque
 import threading
-from twisted.web.resource import Resource
-from twisted.web.static import Data
-from twisted.web.server import Site
-from twisted.internet import reactor
+from helper import Helper
 
 class Server(object):
-    def __init__(self, name, port=None, use_bonjour=False):
+    def __init__(self, name, port=None, use_bonjour=False, data_callback=None):
+        '''note that data_callback must be thread safe'''
         self.port = port or 8139
         self.jobnum = 0
         self.queue = deque()
         self.completed = {}
         self.lock = threading.Lock()
         self.use_bonjour = use_bonjour
+        self.data_callback=data_callback
         self.serving = False
         self.helper = Helper(self)
 
@@ -67,46 +65,12 @@ class Server(object):
             self.queue.clear()
             self.completed = {}
             
-class StatusWrapper(Resource):
-    isLeaf = True
-    def __init__(self, work_server):
-        Resource.__init__(self)
-        self.work_server = work_server
-
-    def render_GET(self, request):
-        print "serving", request
-        return "<html><body><PRE>%s</PRE></body></html>"%(self.work_server.queue)
-
-class WorkWrapper(Resource):
-    def __init__(self, work_server):
-        Resource.__init__(self)
-        self.work_server = work_server
-        self.status = StatusWrapper(work_server)
-
-    def getChild(self, name, request):
-        print "getchild", name, request
-        if name == '':
-            return self.status
-        if name == 'work':
-            return Data(str(self.work_server.next_job()), 'text/plain')
-        return self
-
-    def render_GET(self, request):
-        return "default workwrapper", request
-
-class Helper(object):
-    def __init__(self, work_server):
-        self.site = Site(WorkWrapper(work_server))
-
-    def start(self, port):
-        reactor.listenTCP(port, self.site)
-        threading.Thread(None, reactor.run, "Twisted reactor thread", kwargs={'installSignalHandlers' : 0}).start()
-
-    def stop(self):
-        reactor.callFromThread(reactor.stop)
-
 if __name__ == '__main__':
-    s = Server('test', 8180)
+    def data_callback(str):
+        print "ser", str
+        return "data '%s'"%(str), 'text/plain'
+
+    s = Server('test', 8180, data_callback=data_callback)
     s.start()
     s.add_work('first job')
     s.add_work('second job')
