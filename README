@@ -1,0 +1,6 @@
+Nuageux is a very simple library for ad-hoc cloud computing (i.e.,
+with a set of desktop machines in a single office, and without
+worrying about security/"cheating" or any sort of optimal scheduling).
+Job information, data, and results are all communicated over HTTP (for
+ease of debugging).  It makes use of Twisted and will eventually allow
+auto-discovery of work servers using Bonjour/Zeroconf.
