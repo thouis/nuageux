@@ -1,5 +1,5 @@
 from twisted.web.resource import Resource
-from twisted.web.static import Data
+from twisted.web.static import Data, File
 from twisted.web.server import Site
 from twisted.internet import reactor
 import threading
@@ -16,6 +16,9 @@ class StatusWrapper(Resource):
 class DataLeaf(Data):
     isLeaf = True
 
+class FileLeaf(File):
+    isLeaf = True
+
 class WorkWrapper(Resource):
     def __init__(self, work_server):
         Resource.__init__(self)
@@ -29,10 +32,11 @@ class WorkWrapper(Resource):
         if name == 'work':
             return DataLeaf(str(self.work_server.next_job()), 'text/plain')
         if name == 'data':
-            print "datareq", request, request.postpath
-            val = self.work_server.data_callback(request)
-            print val
-            return DataLeaf(*val)
+            val = self.work_server.data_callback(request.postpath)
+            if isinstance(val, tuple):
+                return DataLeaf(*val)
+            else:
+                return FileLeaf(val, 'application/octet-stream')
         return self
 
     def render_GET(self, request):

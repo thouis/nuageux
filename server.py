@@ -4,6 +4,7 @@ import sys
 from collections import deque
 import threading
 from helper import Helper
+import socket
 
 class Server(object):
     def __init__(self, name, port=None, use_bonjour=False, data_callback=None):
@@ -64,6 +65,9 @@ class Server(object):
         with self.lock:
             self.queue.clear()
             self.completed = {}
+
+    def base_URL(self):
+        return 'http://%s:%d'%(socket.getfqdn(), self.port)
             
 if __name__ == '__main__':
     def data_callback(str):
