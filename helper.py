@@ -2,7 +2,9 @@ from twisted.web.resource import Resource
 from twisted.web.static import Data, File
 from twisted.web.server import Site
 from twisted.internet import reactor
+from twisted.web.client import getPage
 import threading
+import urllib, urllib2
 
 class StatusWrapper(Resource):
     isLeaf = True
@@ -19,6 +21,21 @@ class DataLeaf(Data):
 class FileLeaf(File):
     isLeaf = True
 
+class Receiver(Resource):
+    isLeaf = True
+    def __init__(self, work_server):
+        Resource.__init__(self)
+        self.work_server = work_server
+
+    def render_POST(self, request):
+        result = request.args.copy()
+        jobnum = int(result['jobnum'].pop())
+        if len(result['jobnum']) == 0:
+            del result['jobnum']
+        self.work_server.receive_work(jobnum, result)
+        return '<html><body>thanks</body></html>'
+
+
 class WorkWrapper(Resource):
     def __init__(self, work_server):
         Resource.__init__(self)
@@ -27,10 +44,14 @@ class WorkWrapper(Resource):
 
     def getChild(self, name, request):
         print "getchild", name, request
+        if request.method == 'POST':
+            return Receiver(self.work_server)
         if name == '':
             return self.status
         if name == 'work':
-            return DataLeaf(str(self.work_server.next_job()), 'text/plain')
+            workstr = self.work_server.next_job()
+            assert isinstance(workstr, str) or isinstance(workstr, unicode)
+            return DataLeaf(workstr, 'text/plain')
         if name == 'data':
             val = self.work_server.data_callback(request.postpath)
             if isinstance(val, tuple):
@@ -53,3 +74,10 @@ class Helper(object):
     def stop(self):
         reactor.callFromThread(reactor.stop)
 
+def report_result(base_url, jobnum, **kwargs):
+    # we have to be encode the POST data like this, to ensure the
+    # nuageux jobnum is first (in case the user uses their own
+    # "jobnum" value.
+    postdata = urllib.urlencode(zip(['jobnum'] + kwargs.keys(),
+                                    [jobnum] + kwargs.values()))
+    print "REPORT", urllib2.urlopen(base_url, postdata).read()

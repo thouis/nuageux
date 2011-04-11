@@ -3,11 +3,12 @@ import select
 import sys
 from collections import deque
 import threading
-from helper import Helper
+from helper import Helper, report_result
 import socket
+import urllib
 
 class Server(object):
-    def __init__(self, name, port=None, use_bonjour=False, data_callback=None):
+    def __init__(self, name, port=None, use_bonjour=False, data_callback=None, validate_result=None):
         '''note that data_callback must be thread safe'''
         self.port = port or 8139
         self.jobnum = 0
@@ -15,7 +16,8 @@ class Server(object):
         self.completed = {}
         self.lock = threading.Lock()
         self.use_bonjour = use_bonjour
-        self.data_callback=data_callback
+        self.data_callback = data_callback
+        self.validate_result = validate_result
         self.serving = False
         self.helper = Helper(self)
 
@@ -39,15 +41,24 @@ class Server(object):
 
     def next_job(self):
         with self.lock:
-            jobnum, work_blob = self.queue[0]
-            self.queue.rotate(1)
-            return (jobnum, work_blob)
+            if len(self.queue) > 0:
+                jobnum, work_blob = self.queue[0]
+                self.queue.rotate(-1)
+                return "%d %s"%(jobnum, work_blob)
+            else:
+                return "NOWORK"
 
-    def receive_work(self, jobnum, result_blob):
+    def receive_work(self, jobnum, result_dict):
+        # XXX - this should probably cache results in files, to prevent overload
+        # XXX - need to check work is valid before removing from work queue
+        if self.validate_result is not None:
+            if not self.validate_result(result_dict):
+                sys.stderr.write("NUAGEUX: job %s not accepted\n"%(jobnum))
+                return
         with self.lock:
             # only accept the first answer, though we could do some consistency checks here.
             if jobnum not in self.completed:
-                self.completed[jobnum] = result_blob
+                self.completed[jobnum] = result_dict
                 # This seems the easiest way to remove from the queue given only the jobnum
                 # (I guess we could add a self.jobnum_to_work dict, but would it be cleaner?)
                 for idx in range(len(self.queue)):
