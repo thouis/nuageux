@@ -19,7 +19,7 @@ class Server(object):
         self.data_callback = data_callback
         self.validate_result = validate_result
         self.serving = False
-        self.helper = Helper(self)
+        self.helper = Helper(self, self.port)
 
     def add_work(self, work_blob):
         with self.lock:

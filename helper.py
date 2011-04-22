@@ -63,16 +63,41 @@ class WorkWrapper(Resource):
     def render_GET(self, request):
         return "default workwrapper", request
 
+
+__started = False
+def start_reactor():
+    global __started
+    if not __started:
+        threading.Thread(None, reactor.run, "Twisted reactor thread", kwargs={'installSignalHandlers' : 0}).start()
+        __started = True
+
 class Helper(object):
-    def __init__(self, work_server):
-        self.site = Site(WorkWrapper(work_server))
+    def __init__(self, work_server, port):
+        self.site = Site(WorkWrapper(work_server)) 
+        self.port = port
+        self.lock = threading.Lock()
+        self.listening = False
 
     def start(self, port):
-        reactor.listenTCP(port, self.site)
-        threading.Thread(None, reactor.run, "Twisted reactor thread", kwargs={'installSignalHandlers' : 0}).start()
+        start_reactor()
+        with self.lock:
+            if not self.listening:
+                reactor.callFromThread(self.start_listening)
 
     def stop(self):
-        reactor.callFromThread(reactor.stop)
+        with self.lock:
+            if self.listening:
+                reactor.callFromThread(self.stop_listening)
+
+    def start_listening(self):
+        with self.lock:
+            self.port = reactor.listenTCP(self.port, self.site)
+            self.listening = True
+
+    def stop_listening(self):
+        with self.lock:
+            self.port.stopListening()
+            self.listening = False
 
 def report_result(base_url, jobnum, **kwargs):
     # we have to be encode the POST data like this, to ensure the
