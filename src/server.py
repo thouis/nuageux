@@ -79,7 +79,11 @@ class Server(object):
 
     def base_URL(self):
         return 'http://%s:%d'%(socket.getfqdn(), self.port)
-            
+
+    def advertise(self, name, protocol):
+        assert protocol[0].isalpha() and (len(protocol) < 16) and protocol.replace('-', '').isalpha(), "protocol must be alphanumeric+dashes, <= 15 characters, and start with alphanumeric"
+        self.helper.advertise(name, protocol)
+
 if __name__ == '__main__':
     def data_callback(str):
         print "ser", str

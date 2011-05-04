@@ -3,8 +3,16 @@ from twisted.web.static import Data, File
 from twisted.web.server import Site
 from twisted.internet import reactor
 from twisted.web.client import getPage
+from twisted.internet.interfaces import IReadDescriptor
+from twisted.internet.defer import Deferred
 import threading
 import urllib, urllib2
+
+try:
+    import pybonjour
+    has_bonjour = True
+except:
+    has_bonjour = False
 
 class StatusWrapper(Resource):
     isLeaf = True
@@ -77,6 +85,7 @@ class Helper(object):
         self.port = port
         self.lock = threading.Lock()
         self.listening = False
+        self.advertiser = None
 
     def start(self, port):
         start_reactor()
@@ -98,6 +107,14 @@ class Helper(object):
         with self.lock:
             self.port.stopListening()
             self.listening = False
+            if self.advertiser is not None:
+                self.advertiser.stop()
+                self.advertiser = None
+
+    def advertise(self, name, protocol):
+        with self.lock:
+            if self.advertiser is None:
+                self.advertiser = Advertiser(name, protocol, self.port)
 
 def report_result(base_url, jobnum, **kwargs):
     # we have to be encode the POST data like this, to ensure the
@@ -106,3 +123,54 @@ def report_result(base_url, jobnum, **kwargs):
     postdata = urllib.urlencode(zip(['jobnum'] + kwargs.keys(),
                                     [jobnum] + kwargs.values()))
     print "REPORT", urllib2.urlopen(base_url, postdata).read()
+
+# based on from http://www.indelible.org/ink/twisted-bonjour/
+class Advertiser(object):
+    def __init__(self, name, protocol, port):
+        assert has_bonjour, "Bonjour/Zeroconf required for advertising work."
+        self.sdref = None
+        d = self.broadcast("_%s._tcp"%(protocol), port, name)
+        d.addCallback(self.started_callback)
+        d.addErrback(self.failed_callback)
+
+    def started_callback(self, args):
+        self.sdref = args[0]
+        print "Advertising %s.%s%s"%args[1:]
+
+    def failed_callback(self, errcode):
+        print "Advertising failed:", errcode
+
+    def stop(self):
+        # race condition if started_callback hasn't been called, when
+        # stop() is called.  So don't do that.
+        self.sdref.close()
+
+    def broadcast(self, regtype, port, name):
+        def _callback(sdref, flags, errorCode, name, regtype, domain):
+            if errorCode == pybonjour.kDNSServiceErr_NoError:
+                d.callback((sdref, name, regtype, domain))
+            else:
+                d.errback(errorCode)
+        d = Deferred()
+        sdref = pybonjour.DNSServiceRegister(name=name,
+                                             regtype=regtype,
+                                             port=port,
+                                             callBack=_callback)
+        reactor.addReader(Advertiser.ServiceDescriptor(sdref))
+        return d
+
+    class ServiceDescriptor(object):
+        def __init__(self, sdref):
+            self.sdref = sdref
+
+        def doRead(self):
+            pybonjour.DNSServiceProcessResult(self.sdref)
+
+        def fileno(self):
+            return self.sdref.fileno()
+
+        def logPrefix(self):
+            return "nuageux_bonjour"
+
+        def connectionLost(self, reason):
+            self.sdref.close()
